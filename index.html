@@ -25,8 +25,8 @@
     
     .signal-card { background: var(--card); border-radius: 18px; padding: 24px 16px; text-align: center; border: 2px solid #334155; transition: all 0.3s ease; }
     .status-badge { display: inline-block; padding: 6px 16px; border-radius: 99px; font-size: 0.8rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
-    .signal-headline { font-size: 1.7rem; font-weight: 800; margin-bottom: 6px; }
-    .signal-sub { font-size: 0.9rem; color: var(--muted); line-height: 1.4; }
+    .signal-headline { font-size: 1.6rem; font-weight: 800; margin-bottom: 6px; }
+    .signal-sub { font-size: 0.88rem; color: var(--muted); line-height: 1.4; }
 
     .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .metric-box { background: var(--card); padding: 14px; border-radius: 14px; border: 1px solid #334155; }
@@ -45,14 +45,12 @@
     <button class="refresh-btn" onclick="fetchGoldData()">↻ Refresh</button>
   </div>
 
-  <!-- Main Signal Widget -->
   <div id="signalCard" class="signal-card">
-    <div id="badge" class="status-badge" style="background:#334155;">LOADING...</div>
-    <div id="headline" class="signal-headline">Checking NSE...</div>
-    <div id="subtext" class="signal-sub">Fetching last 30 trading days of GOLDBEES.NS</div>
+    <div id="badge" class="status-badge" style="background:#334155;">CONNECTING...</div>
+    <div id="headline" class="signal-headline">Loading GOLDBEES...</div>
+    <div id="subtext" class="signal-sub">Fetching live NSE market data</div>
   </div>
 
-  <!-- 4 Key Technical Metrics -->
   <div class="metrics-grid">
     <div class="metric-box">
       <div class="metric-label">GOLDBEES Live</div>
@@ -77,8 +75,8 @@
   </div>
 
   <div class="rule-card">
-    <strong>2-Days-A-Month Strategy Rules:</strong><br/>
-    🟢 <strong>STRONG BUY:</strong> 5D RSI &lt; 28 AND Price near 20D Lower Band (or 2-Day drop &ge; 1.8%).<br/>
+    <strong>Strategy Rules:</strong><br/>
+    🟢 <strong>STRONG BUY:</strong> 5D RSI &lt; 28 AND Price near Lower Band (or 2-Day drop &ge; 1.8%).<br/>
     🟡 <strong>ACCUMULATE:</strong> 5D RSI &lt; 38 OR Price below 20-Day Average.<br/>
     🔴 <strong>WAIT:</strong> Gold is overbought; hold cash for the monthly pullback.
   </div>
@@ -90,25 +88,30 @@ async function fetchGoldData() {
   const subtext = document.getElementById('subtext');
   const card = document.getElementById('signalCard');
 
-  badge.innerText = "UPDATING...";
+  badge.innerText = "FETCHING...";
   try {
-    // Uses allorigins CORS proxy to pull Yahoo Finance daily candles for GOLDBEES.NS
-    const targetUrl = encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/GOLDBEES.NS?range=2mo&interval=1d");
-    const res = await fetch(`https://api.allorigins.win/get?url=${targetUrl}`);
-    const data = await res.json();
-    const result = JSON.parse(data.contents).chart.result[0];
+    // Using Stooq direct CSV endpoint for GOLDBEES.NS (bypass CORS restrictions)
+    const res = await fetch('https://stooq.com/q/d/l/?s=goldbees.ns&i=d');
+    const text = await res.text();
+    const rows = text.trim().split('\n').slice(1); // Remove header
     
-    const rawCloses = result.indicators.quote[0].close;
-    const closes = rawCloses.filter(c => c !== null && c !== undefined);
+    let closes = [];
+    rows.forEach(row => {
+      const cols = row.split(',');
+      if (cols.length >= 5) {
+        const closePrice = parseFloat(cols[4]);
+        if (!isNaN(closePrice)) closes.push(closePrice);
+      }
+    });
+
+    if (closes.length < 25) throw new Error("Insufficient data");
 
     const currentPrice = closes[closes.length - 1];
     const prev2Price = closes[closes.length - 3];
     const twoDayDrop = ((currentPrice - prev2Price) / prev2Price) * 100;
 
-    // Calculate 5-Day Fast RSI
     const rsi5 = calcRSI(closes, 5);
 
-    // Calculate 20-Day Bollinger Bands (1.8 StdDev)
     const last20 = closes.slice(-20);
     const sma20 = last20.reduce((a, b) => a + b, 0) / 20;
     const variance = last20.reduce((a, b) => a + Math.pow(b - sma20, 2), 0) / 20;
@@ -116,10 +119,8 @@ async function fetchGoldData() {
     const lowerBand = sma20 - (1.8 * stdDev);
     const distFromLower = ((currentPrice - lowerBand) / lowerBand) * 100;
 
-    // Day of month check (28th+ safety rule)
     const dayOfMonth = new Date().getDate();
 
-    // Update UI Cards
     document.getElementById('livePrice').innerText = `₹${currentPrice.toFixed(2)}`;
     document.getElementById('twoDayChange').innerText = `2-Day: ${twoDayDrop >= 0 ? '+' : ''}${twoDayDrop.toFixed(2)}%`;
     document.getElementById('rsiVal').innerText = rsi5.toFixed(1);
@@ -128,7 +129,6 @@ async function fetchGoldData() {
     document.getElementById('smaVal').innerText = `₹${sma20.toFixed(2)}`;
     document.getElementById('monthDay').innerText = `Day ${dayOfMonth} of Month`;
 
-    // Decision Engine
     const isStrongBuy = (rsi5 < 28 && currentPrice <= lowerBand * 1.008) || (twoDayDrop <= -1.8 && rsi5 < 35);
     const isAccumulate = (rsi5 < 38 || currentPrice < sma20) || (dayOfMonth >= 28 && currentPrice <= sma20 * 1.01);
 
@@ -145,39 +145,4 @@ async function fetchGoldData() {
       badge.style.color = "#451a03";
       badge.innerText = "🟡 MILD PULLBACK ZONE";
       headline.innerText = "BUY 50% TRANCHE";
-      subtext.innerText = dayOfMonth >= 28 
-        ? "Month-end safety rule active & price is fair. Deploy remaining monthly quota."
-        : "Gold is below its 20-day average. Good for partial buying, or wait for RSI < 28.";
-    } else {
-      card.style.borderColor = "#ef4444";
-      badge.style.background = "#ef4444";
-      badge.style.color = "#ffffff";
-      badge.innerText = "🔴 NO DIP — HOLD CASH";
-      headline.innerText = "WAIT FOR PULLBACK";
-      subtext.innerText = `Gold is trading above average (RSI: ${rsi5.toFixed(0)}). Wait for one of the 2 monthly dip days.`;
-    }
-  } catch (err) {
-    badge.innerText = "CONNECTION ERROR";
-    headline.innerText = "Tap Refresh";
-    subtext.innerText = "Could not reach Yahoo Finance endpoint. Check mobile data.";
-  }
-}
-
-function calcRSI(prices, period) {
-  let gains = 0, losses = 0;
-  for (let i = prices.length - period; i < prices.length; i++) {
-    const diff = prices[i] - prices[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
-  }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
-}
-
-fetchGoldData();
-</script>
-</body>
-</html>
+      sub
