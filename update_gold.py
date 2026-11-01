@@ -36,11 +36,11 @@ isStrongBuy = (rsi5 < 28 and currentPrice <= lowerBand * 1.008) or (twoDayDrop <
 isAccumulate = (rsi5 < 38 or currentPrice < sma20) or (dayOfMonth >= 28 and currentPrice <= sma20 * 1.01)
 
 if isStrongBuy:
-    signal_text = "BUY"
+    signal_text = "🟢 STRONG BUY"
 elif isAccumulate:
-    signal_text = "ACCUM"
+    signal_text = "🟡 ACCUMULATE"
 else:
-    signal_text = "WAIT"
+    signal_text = "🔴 WAIT"
 
 with open("gold.txt", "w") as f:
     f.write(str(round(currentPrice, 2)))
