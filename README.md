@@ -1,2 +1,2 @@
 # gold-radar
-Bye gold indicator at dips in a month 
+Buy gold indicator at dips in a month 
